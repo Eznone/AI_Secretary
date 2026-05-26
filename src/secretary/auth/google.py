@@ -28,6 +28,19 @@ _KEYRING_KEY = "google_oauth_token"
 # Used when no system keyring is available (e.g. headless Linux / WSL).
 _FALLBACK_PATH = APP_DATA_DIR / ".google_token.json"
 
+# Keyring keys for the OAuth application credentials (identify the app, not the user).
+# The user's access/refresh token is stored separately under _KEYRING_KEY above.
+_CLIENT_ID_KEY     = "google_client_id"
+_CLIENT_SECRET_KEY = "google_client_secret"
+
+# Fixed Google OAuth endpoints for installed/desktop apps — these never change.
+_INSTALLED_APP_ENDPOINTS: dict = {
+    "auth_uri":                    "https://accounts.google.com/o/oauth2/auth",
+    "token_uri":                   "https://oauth2.googleapis.com/token",
+    "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+    "redirect_uris":               ["http://localhost"],
+}
+
 
 # ---------------------------------------------------------------------------
 # Fallback file store (mode 600, owner-only)
@@ -73,6 +86,37 @@ def _save_token(creds: Credentials) -> None:
         _write_token_fallback(raw)
 
 
+# ---------------------------------------------------------------------------
+# OAuth application credentials (client_id / client_secret)
+# ---------------------------------------------------------------------------
+
+def save_google_client_credentials(client_id: str, client_secret: str) -> None:
+    """Persist the OAuth app credentials to the keyring (or secure file fallback)."""
+    from secretary.auth.keys import save_key
+    save_key(_CLIENT_ID_KEY, client_id)
+    save_key(_CLIENT_SECRET_KEY, client_secret)
+
+
+def load_google_client_config() -> dict | None:
+    """Return an InstalledAppFlow config dict built from keyring, or None if not configured."""
+    from secretary.auth.keys import load_key
+    client_id     = load_key(_CLIENT_ID_KEY)
+    client_secret = load_key(_CLIENT_SECRET_KEY)
+    if not (client_id and client_secret):
+        return None
+    return {
+        "installed": {
+            "client_id":     client_id,
+            "client_secret": client_secret,
+            **_INSTALLED_APP_ENDPOINTS,
+        }
+    }
+
+
+# ---------------------------------------------------------------------------
+# User token (access + refresh)
+# ---------------------------------------------------------------------------
+
 def get_credentials() -> Credentials | None:
     creds = _load_token()
     if creds is None:
@@ -87,13 +131,20 @@ def get_credentials() -> Credentials | None:
 
 
 def run_oauth_flow() -> Credentials:
-    client_secret = settings.google_client_secret_path
-    if not client_secret.exists():
-        raise FileNotFoundError(
-            f"Google client secret not found at {client_secret}.\n"
-            "Download it from https://console.cloud.google.com/ and place it there."
+    config = load_google_client_config()
+    if config:
+        # Preferred path: credentials stored in keyring / secure file fallback.
+        flow = InstalledAppFlow.from_client_config(config, SCOPES)
+    elif settings.google_client_secret_path.exists():
+        # Backward-compatibility: legacy JSON file on disk.
+        flow = InstalledAppFlow.from_client_secrets_file(
+            str(settings.google_client_secret_path), SCOPES
         )
-    flow = InstalledAppFlow.from_client_secrets_file(str(client_secret), SCOPES)
+    else:
+        raise RuntimeError(
+            "Google OAuth credentials not configured.\n"
+            "Run 'sec auth' to enter your client ID and secret."
+        )
     # port=0 → OS picks a random ephemeral port (no predictable attack surface)
     creds = flow.run_local_server(port=0)
     _save_token(creds)

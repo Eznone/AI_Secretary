@@ -14,6 +14,14 @@ _PY_TO_JSON: dict[type, str] = {
     dict: "object",
 }
 
+# Maps JSON schema types to Python cast targets for numeric coercion at dispatch time.
+# Booleans are excluded: bool("false") == True in Python, which is semantically wrong.
+# Arrays and objects must arrive as proper JSON types, not coerced from strings.
+_JSON_COERCIONS: dict[str, type] = {
+    "integer": int,
+    "number":  float,
+}
+
 
 def tool(fn: Callable) -> Callable:
     """Decorator: register a function as an AI-callable tool.
@@ -57,11 +65,33 @@ def get_tool_schemas() -> list[dict[str, Any]]:
     return [v["schema"] for v in _REGISTRY.values()]
 
 
+def _coerce_inputs(inputs: dict[str, Any], schema: dict) -> dict[str, Any]:
+    """Cast each input value to the type declared in the tool's JSON schema.
+
+    Guards against LLMs that emit numeric arguments as JSON strings
+    (e.g. {"max_results": "10"} instead of {"max_results": 10}).
+    Values that cannot be cast are passed through unchanged so the tool
+    function can surface a meaningful error.
+    """
+    properties = schema.get("parameters", {}).get("properties", {})
+    coerced: dict[str, Any] = {}
+    for key, value in inputs.items():
+        prop = properties.get(key, {})
+        target = _JSON_COERCIONS.get(prop.get("type", ""))
+        if target is not None and not isinstance(value, target):
+            try:
+                value = target(value)
+            except (ValueError, TypeError):
+                pass
+        coerced[key] = value
+    return coerced
+
+
 def dispatch(name: str, inputs: dict[str, Any]) -> Any:
     entry = _REGISTRY.get(name)
     if not entry:
         raise ValueError(f"Unknown tool: {name!r}")
-    return entry["fn"](**inputs)
+    return entry["fn"](**_coerce_inputs(inputs, entry["schema"]))
 
 
 def list_tools() -> list[str]:

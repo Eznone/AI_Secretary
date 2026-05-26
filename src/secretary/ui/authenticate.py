@@ -94,3 +94,55 @@ def run_authenticate() -> None:
     console.print(f"  [bold green]✓[/bold green] Key saved for [bold cyan]{PROVIDERS[provider]}[/bold cyan].")
     console.print(f"  Active provider set to [bold cyan]{PROVIDERS[provider]}[/bold cyan].")
     console.print()
+
+
+def run_google_setup() -> bool:
+    """Prompt for Google OAuth client_id and client_secret and save them to the keyring.
+
+    Returns True if credentials were saved, False if the user cancelled.
+    """
+    from secretary.auth.google import load_google_client_config, save_google_client_credentials
+
+    console.print()
+    console.print(
+        Panel(
+            Text("Google OAuth Setup", style="bold cyan", justify="center"),
+            subtitle="[dim]Find these at console.cloud.google.com → APIs & Services → Credentials[/dim]",
+            border_style="cyan",
+            padding=(0, 4),
+        )
+    )
+    console.print()
+    console.print("  [dim]Create an OAuth 2.0 Client ID (Desktop app type), then paste the two values below.[/dim]")
+
+    existing = load_google_client_config()
+    if existing:
+        console.print("  [dim]Existing credentials found — enter new values to replace, or press Enter to keep.[/dim]")
+    console.print()
+
+    try:
+        client_id: str | None = questionary.text(
+            "Client ID:",
+            style=_QUESTIONARY_STYLE,
+        ).ask()
+        if not client_id or not client_id.strip():
+            console.print("[yellow]No client ID entered — nothing saved.[/yellow]\n")
+            return False
+
+        client_secret: str | None = questionary.password(
+            "Client Secret:",
+            style=_QUESTIONARY_STYLE,
+        ).ask()
+        if not client_secret or not client_secret.strip():
+            console.print("[yellow]No client secret entered — nothing saved.[/yellow]\n")
+            return False
+
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Setup cancelled.[/yellow]\n")
+        return False
+
+    save_google_client_credentials(client_id.strip(), client_secret.strip())
+    console.print()
+    console.print("  [bold green]✓[/bold green] Google credentials saved.")
+    console.print()
+    return True

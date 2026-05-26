@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import json
 
-from groq import Groq
+from groq import BadRequestError, Groq
 
 from secretary.agent.providers.base import Conversation, ToolCall, TurnResult
 from secretary.config import settings
@@ -54,11 +54,25 @@ class GroqAdapter:
         conversation: Conversation,
         tools: list[dict],
     ) -> TurnResult:
-        response = self._client.chat.completions.create(
-            model=self._model,
-            messages=self._translate_conversation(system, conversation),
-            tools=[self._translate_schema(t) for t in tools],
-        )
+        groq_tools = [self._translate_schema(t) for t in tools]
+        messages = self._translate_conversation(system, conversation)
+
+        try:
+            response = self._client.chat.completions.create(
+                model=self._model,
+                messages=messages,
+                tools=groq_tools,
+            )
+        except BadRequestError as exc:
+            if not _is_tool_generation_error(exc):
+                raise
+            # Groq rejected the model's own tool-call output because generated
+            # arguments didn't match the schema (e.g. integer sent as string).
+            # Retry without tools so the model can respond conversationally.
+            response = self._client.chat.completions.create(
+                model=self._model,
+                messages=messages,
+            )
 
         choice = response.choices[0]
         # Check message.tool_calls first — some model variants return finish_reason="stop"
@@ -71,7 +85,9 @@ class GroqAdapter:
                     inputs = json.loads(tc.function.arguments)
                 except json.JSONDecodeError:
                     inputs = {}
-                tool_calls.append(ToolCall(id=tc.id, name=tc.function.name, inputs=inputs))
+                tool_calls.append(
+                    ToolCall(id=tc.id, name=tc.function.name, inputs=inputs)
+                )
             return TurnResult(done=False, tool_calls=tool_calls)
 
         return TurnResult(done=True, text=choice.message.content or "")
@@ -107,32 +123,49 @@ class GroqAdapter:
             elif role == "assistant":
                 if turn.get("tool_calls"):
                     # Arguments must be serialised to a JSON string per the OpenAI spec.
-                    messages.append({
-                        "role": "assistant",
-                        "content": None,
-                        "tool_calls": [
-                            {
-                                "id": tc["id"],
-                                "type": "function",
-                                "function": {
-                                    "name": tc["name"],
-                                    "arguments": json.dumps(tc["inputs"]),
-                                },
-                            }
-                            for tc in turn["tool_calls"]
-                        ],
-                    })
+                    messages.append(
+                        {
+                            "role": "assistant",
+                            "content": None,
+                            "tool_calls": [
+                                {
+                                    "id": tc["id"],
+                                    "type": "function",
+                                    "function": {
+                                        "name": tc["name"],
+                                        "arguments": json.dumps(tc["inputs"]),
+                                    },
+                                }
+                                for tc in turn["tool_calls"]
+                            ],
+                        }
+                    )
                 else:
-                    messages.append({"role": "assistant", "content": turn["text"] or ""})
+                    messages.append(
+                        {"role": "assistant", "content": turn["text"] or ""}
+                    )
 
             elif role == "tool_results":
                 # One message per result (OpenAI convention), unlike Anthropic which
                 # batches all results into a single user turn.
                 for r in turn["results"]:
-                    messages.append({
-                        "role": "tool",
-                        "tool_call_id": r["id"],
-                        "content": r["content"],
-                    })
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": r["id"],
+                            "content": r["content"],
+                        }
+                    )
 
         return messages
+
+
+def _is_tool_generation_error(exc: BadRequestError) -> bool:
+    """Return True for Groq 400s caused by the model generating invalid tool arguments.
+
+    Groq validates model-generated tool-call JSON against the declared schema and
+    rejects it with code "tool_use_failed" when types don't match (e.g. an integer
+    parameter sent as a string). This is distinct from a malformed API request on
+    our side, so only these errors should trigger a tool-free retry.
+    """
+    return exc.status_code == 400 and "tool_use_failed" in str(exc)
