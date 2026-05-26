@@ -8,7 +8,9 @@ from secretary.auth.google import get_calendar_service
 
 @tool
 def list_calendar_events(date: str, max_results: int = 15) -> str:
-    """List events from Google Calendar for a specific date.
+    """List events from Google Calendar for a specific date, including their IDs.
+
+    Always includes event IDs so the model can reference them for deletion or editing.
 
     Args:
         date: ISO date string, e.g. '2026-05-25'. Pass today's date if the user didn't specify one.
@@ -42,7 +44,7 @@ def list_calendar_events(date: str, max_results: int = 15) -> str:
         start = e["start"].get("dateTime", e["start"].get("date", ""))
         # Strip timezone offset for cleaner display
         time_part = start[11:16] if "T" in start else start
-        lines.append(f"  {time_part}  {e.get('summary', '(no title)')}")
+        lines.append(f"  [{e['id']}] {time_part}  {e.get('summary', '(no title)')}")
     return "\n".join(lines)
 
 
@@ -86,40 +88,3 @@ def delete_calendar_event(event_id: str) -> str:
     service.events().delete(calendarId="primary", eventId=event_id).execute()
     return f"Event {event_id!r} deleted."
 
-
-@tool
-def list_calendar_events_with_ids(date: str) -> str:
-    """List events for a date including their IDs (needed for deletion or editing).
-
-    Args:
-        date: ISO date string, e.g. '2026-05-25'.
-    """
-    service = get_calendar_service()
-    day_start = datetime.fromisoformat(date).replace(
-        hour=0, minute=0, second=0, tzinfo=timezone.utc
-    )
-    day_end = day_start + timedelta(days=1)
-
-    result = (
-        service.events()
-        .list(
-            calendarId="primary",
-            timeMin=day_start.isoformat(),
-            timeMax=day_end.isoformat(),
-            maxResults=20,
-            singleEvents=True,
-            orderBy="startTime",
-        )
-        .execute()
-    )
-
-    events = result.get("items", [])
-    if not events:
-        return f"No events found on {date}."
-
-    lines = [f"Events on {date} (with IDs):"]
-    for e in events:
-        start = e["start"].get("dateTime", e["start"].get("date", ""))
-        time_part = start[11:16] if "T" in start else start
-        lines.append(f"  [{e['id']}] {time_part}  {e.get('summary', '(no title)')}")
-    return "\n".join(lines)

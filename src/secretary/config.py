@@ -19,6 +19,10 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
     )
 
+    # Set DEBUG=true in .env or as an environment variable to enable verbose
+    # error output (full tracebacks with file paths and line numbers).
+    debug: bool = False
+
     anthropic_api_key: str | None = None
     anthropic_model: str = "claude-sonnet-4.6"
     gemini_model: str = "gemini-2.0-flash"

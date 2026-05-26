@@ -19,7 +19,7 @@ from secretary.agent.providers.base import (
     make_user_turn,
 )
 from secretary.agent.registry import dispatch, get_tool_schemas
-from secretary.config import settings
+from secretary.config import settings  # also provides settings.debug
 from secretary.storage.db import create_session, save_message
 from secretary.ui.console import console, print_tool_call
 
@@ -81,7 +81,11 @@ def run_session() -> None:
             # Catching broad Exception so provider SDK errors (anthropic.APIError,
             # groq.APIError, google.api_core errors, etc.) all surface uniformly
             # without importing any provider SDK here.
-            console.print(f"[red]Error:[/red] {exc}")
+            if settings.debug:
+                # Full traceback with file paths, line numbers, and local variables.
+                console.print_exception(show_locals=True)
+            else:
+                console.print(f"[red]Error:[/red] {exc}")
 
 
 def _handle_slash_command(raw: str) -> None:
@@ -144,6 +148,11 @@ def _agent_turn(conversation: list[dict], session_id: int) -> None:
                 try:
                     output = dispatch(tc.name, tc.inputs)
                 except Exception as exc:
+                    if settings.debug:
+                        # Print full traceback so the origin of the tool failure
+                        # is visible before the error is forwarded to the model.
+                        console.print(f"[red]Tool error in[/red] [bold]{tc.name}[/bold]:")
+                        console.print_exception(show_locals=True)
                     output = f"Error executing {tc.name}: {exc}"
                 tool_results.append({
                     "id": tc.id,
