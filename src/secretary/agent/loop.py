@@ -1,13 +1,23 @@
-"""Core agentic execution loop using Anthropic tool-use."""
+"""
+Core agentic execution loop — provider-agnostic.
+
+All provider-specific logic lives in agent/providers/. This module only knows
+about the neutral Conversation format defined in agent/providers/base.py.
+"""
 
 from datetime import date
 
-import anthropic
 from rich.live import Live
 from rich.markdown import Markdown
 from rich.spinner import Spinner
 from rich.table import Table
 
+from secretary.agent.providers import get_provider
+from secretary.agent.providers.base import (
+    make_assistant_turn,
+    make_tool_results_turn,
+    make_user_turn,
+)
 from secretary.agent.registry import dispatch, get_tool_schemas
 from secretary.config import settings
 from secretary.storage.db import create_session, save_message
@@ -21,24 +31,11 @@ Be concise, direct, and proactive. \
 Always ask for confirmation before creating, modifying, or deleting data.\
 """
 
-_client: anthropic.Anthropic | None = None
-
-
-def _get_client() -> anthropic.Anthropic:
-    global _client
-    if _client is None:
-        key = settings.anthropic_api_key
-        if not key:
-            raise RuntimeError(
-                "No Anthropic API key configured. Run /authenticate to set one up."
-            )
-        _client = anthropic.Anthropic(api_key=key)
-    return _client
-
 
 def run_session() -> None:
+    """Outer REPL: read user input and dispatch each message to _agent_turn()."""
     session_id = create_session()
-    conversation: list[dict] = []
+    conversation: list[dict] = []  # neutral Conversation — see providers/base.py
 
     if not settings.is_configured:
         console.print(
@@ -75,15 +72,16 @@ def run_session() -> None:
             )
             continue
 
-        conversation.append({"role": "user", "content": user_input})
+        conversation.append(make_user_turn(user_input))
         save_message(session_id, "user", user_input)
 
         try:
             _agent_turn(conversation, session_id)
-        except anthropic.APIError as exc:
-            console.print(f"[red]API error:[/red] {exc}")
         except Exception as exc:
-            console.print(f"[red]Unexpected error:[/red] {exc}")
+            # Catching broad Exception so provider SDK errors (anthropic.APIError,
+            # groq.APIError, google.api_core errors, etc.) all surface uniformly
+            # without importing any provider SDK here.
+            console.print(f"[red]Error:[/red] {exc}")
 
 
 def _handle_slash_command(raw: str) -> None:
@@ -91,12 +89,13 @@ def _handle_slash_command(raw: str) -> None:
 
     if cmd == "/authenticate":
         from secretary.ui.authenticate import run_authenticate
-
         run_authenticate()
-        global _client
-        _client = None  # force client rebuild with the new key
+        # get_provider() is called fresh each _agent_turn(), so no cache to
+        # invalidate here — the new key is picked up automatically next turn.
+
     elif cmd == "/help":
         _print_help()
+
     else:
         console.print(
             f"[yellow]Unknown command:[/yellow] {cmd}  "
@@ -109,15 +108,21 @@ def _print_help() -> None:
     table.add_column(style="bold cyan", no_wrap=True)
     table.add_column(style="white")
     table.add_row("/authenticate", "Set up or change your AI provider API key")
-    table.add_row("/help", "Show this message")
-    table.add_row("exit / quit", "End the session")
+    table.add_row("/help",         "Show this message")
+    table.add_row("exit / quit",   "End the session")
     console.print()
     console.print(table)
     console.print()
 
 
 def _agent_turn(conversation: list[dict], session_id: int) -> None:
-    client = _get_client()
+    """Run the multi-turn tool-use loop for one user request.
+
+    Calls get_provider() fresh each time so that a /authenticate run mid-session
+    is picked up on the very next message. The loop continues until the provider
+    returns TurnResult(done=True), meaning it produced a final text answer.
+    """
+    provider = get_provider()
     system = SYSTEM_PROMPT.format(today=date.today().isoformat())
     tools = get_tool_schemas()
 
@@ -127,42 +132,34 @@ def _agent_turn(conversation: list[dict], session_id: int) -> None:
             console=console,
             transient=True,
         ):
-            response = client.messages.create(
-                model=settings.anthropic_model,
-                max_tokens=4096,
-                system=system,
-                tools=tools,
-                messages=conversation,
-            )
+            result = provider.complete(system, conversation, tools)
 
-        if response.stop_reason == "tool_use":
-            tool_results: list[dict] = []
+        if not result.done:
+            # The provider wants to call tools. Execute each one, collect results,
+            # then append both the tool-calling turn and the results to the
+            # conversation before looping for the provider's next response.
+            tool_results = []
+            for tc in result.tool_calls:
+                print_tool_call(tc.name, tc.inputs)
+                try:
+                    output = dispatch(tc.name, tc.inputs)
+                except Exception as exc:
+                    output = f"Error executing {tc.name}: {exc}"
+                tool_results.append({
+                    "id": tc.id,
+                    "name": tc.name,    # required by Gemini; ignored by Claude/Groq
+                    "content": str(output),
+                })
 
-            for block in response.content:
-                if block.type == "tool_use":
-                    print_tool_call(block.name, block.input)
-                    try:
-                        result = dispatch(block.name, block.input)
-                    except Exception as exc:
-                        result = f"Error executing {block.name}: {exc}"
-                    tool_results.append(
-                        {
-                            "type": "tool_result",
-                            "tool_use_id": block.id,
-                            "content": str(result),
-                        }
-                    )
-
-            conversation.append({"role": "assistant", "content": response.content})
-            conversation.append({"role": "user", "content": tool_results})
+            conversation.append(make_assistant_turn(tool_calls=result.tool_calls))
+            conversation.append(make_tool_results_turn(tool_results))
 
         else:
-            final_text = next(
-                (b.text for b in response.content if hasattr(b, "text")),
-                "",
-            )
+            # Final answer — render, save, and break the tool-use loop.
+            final_text = result.text or ""
             console.print("\n[bold blue]Secretary:[/bold blue]")
             console.print(Markdown(final_text))
             console.print()
+            conversation.append(make_assistant_turn(text=final_text))
             save_message(session_id, "assistant", final_text)
             break

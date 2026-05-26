@@ -14,6 +14,8 @@ dependencies = [
     "keyring>=25.2",
     "cryptography>=42.0",
     "questionary>=2.1.1",
+    "groq>=1.2.0",
+    "google-genai>=2.6.0",
 ]
 
 [project.scripts]

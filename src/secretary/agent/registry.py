@@ -1,4 +1,4 @@
-"""Tool registry: @tool decorator + JSON-schema builder for Anthropic tool-use."""
+"""Tool registry: @tool decorator + provider-neutral JSON-schema builder."""
 
 import inspect
 from typing import Any, Callable
@@ -40,7 +40,10 @@ def tool(fn: Callable) -> Callable:
     schema = {
         "name": fn.__name__,
         "description": description,
-        "input_schema": {
+        # "parameters" is the neutral key. Each provider adapter renames or wraps
+        # this into its own wire format (Anthropic uses "input_schema"; OpenAI/Groq
+        # keep "parameters" but add a {"type": "function", "function": {...}} envelope).
+        "parameters": {
             "type": "object",
             "properties": properties,
             "required": required,

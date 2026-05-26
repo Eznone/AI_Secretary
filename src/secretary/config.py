@@ -17,6 +17,8 @@ class Settings(BaseSettings):
 
     anthropic_api_key: str | None = None
     anthropic_model: str = "claude-opus-4-7"
+    gemini_model: str = "gemini-2.0-flash"
+    groq_model: str = "llama-3.3-70b-versatile"
 
     gemini_api_key: str | None = None
     groq_api_key: str | None = None
