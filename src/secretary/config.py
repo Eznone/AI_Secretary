@@ -3,8 +3,12 @@ from pathlib import Path
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-XDG_DATA = Path.home() / ".local" / "share" / "secretary"
-XDG_DATA.mkdir(parents=True, exist_ok=True)
+from secretary.platform_dirs import ensure_data_dir
+
+# Platform-correct data directory (created on first import).
+# Windows: %LOCALAPPDATA%\secretary  |  macOS: ~/Library/Application Support/secretary
+# Linux:   ~/.local/share/secretary
+APP_DATA_DIR = ensure_data_dir()
 
 _PROJECT_ROOT = Path(__file__).parent.parent.parent
 
@@ -16,7 +20,7 @@ class Settings(BaseSettings):
     )
 
     anthropic_api_key: str | None = None
-    anthropic_model: str = "claude-opus-4-7"
+    anthropic_model: str = "claude-sonnet-4.6"
     gemini_model: str = "gemini-2.0-flash"
     groq_model: str = "llama-3.3-70b-versatile"
 
@@ -26,8 +30,8 @@ class Settings(BaseSettings):
     google_client_secret_path: Path = _PROJECT_ROOT / "credentials" / "google_client_secret.json"
     google_token_keyring_service: str = "secretary_google_oauth"
 
-    db_path: Path = XDG_DATA / "history.db"
-    data_dir: Path = XDG_DATA
+    db_path: Path = APP_DATA_DIR / "history.db"
+    data_dir: Path = APP_DATA_DIR
 
     @model_validator(mode="after")
     def _load_from_keyring(self) -> "Settings":

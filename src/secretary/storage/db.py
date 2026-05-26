@@ -1,8 +1,8 @@
 import sqlite3
-import stat
 from contextlib import contextmanager
 
 from secretary.config import settings
+from secretary.platform_dirs import secure_file
 
 DDL = """
 CREATE TABLE IF NOT EXISTS sessions (
@@ -43,8 +43,7 @@ def _conn():
 def init_db() -> None:
     with _conn() as con:
         con.executescript(DDL)
-    # Restrict DB file to owner only (mode 600)
-    settings.db_path.chmod(stat.S_IRUSR | stat.S_IWUSR)
+    secure_file(settings.db_path)  # owner-only on Unix; no-op on Windows
 
 
 def create_session() -> int:
