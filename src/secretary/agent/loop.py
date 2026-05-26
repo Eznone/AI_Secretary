@@ -82,8 +82,7 @@ def run_session() -> None:
             # groq.APIError, google.api_core errors, etc.) all surface uniformly
             # without importing any provider SDK here.
             if settings.debug:
-                # Full traceback with file paths, line numbers, and local variables.
-                console.print_exception(show_locals=True)
+                console.print_exception()
             else:
                 console.print(f"[red]Error:[/red] {exc}")
 
@@ -149,10 +148,8 @@ def _agent_turn(conversation: list[dict], session_id: int) -> None:
                     output = dispatch(tc.name, tc.inputs)
                 except Exception as exc:
                     if settings.debug:
-                        # Print full traceback so the origin of the tool failure
-                        # is visible before the error is forwarded to the model.
                         console.print(f"[red]Tool error in[/red] [bold]{tc.name}[/bold]:")
-                        console.print_exception(show_locals=True)
+                        console.print_exception()
                     output = f"Error executing {tc.name}: {exc}"
                 tool_results.append({
                     "id": tc.id,

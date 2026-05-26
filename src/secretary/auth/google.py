@@ -74,7 +74,7 @@ def _load_token() -> Credentials | None:
         return None
     try:
         return Credentials.from_authorized_user_info(json.loads(raw), SCOPES)
-    except Exception:
+    except (json.JSONDecodeError, ValueError, KeyError):
         return None
 
 

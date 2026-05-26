@@ -6,7 +6,6 @@ The fallback path is platform-correct via platform_dirs.APP_DATA_DIR.
 """
 
 import json
-import os
 from pathlib import Path
 
 import keyring

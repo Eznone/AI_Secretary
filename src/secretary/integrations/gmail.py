@@ -80,6 +80,9 @@ def send_email(to: str, subject: str, body: str) -> str:
     to = to.replace("\r", "").replace("\n", "").strip()
     subject = subject.replace("\r", "").replace("\n", " ").strip()
 
+    if "@" not in to:
+        return f"Invalid recipient address: {to!r}. Expected a valid email address."
+
     service = get_gmail_service()
     mime_msg = MIMEText(body)
     mime_msg["to"] = to
