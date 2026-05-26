@@ -13,6 +13,7 @@ dependencies = [
     "google-api-python-client>=2.134",
     "keyring>=25.2",
     "cryptography>=42.0",
+    "questionary>=2.1.1",
 ]
 
 [project.scripts]

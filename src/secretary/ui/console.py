@@ -10,7 +10,7 @@ def print_banner() -> None:
     console.print(
         Panel(
             title,
-            subtitle="[dim]Ctrl+C to exit · sec auth to connect Google[/dim]",
+            subtitle="[dim]/authenticate to set API key · sec auth for Google · Ctrl+C to exit[/dim]",
             border_style="cyan",
             padding=(0, 4),
         )

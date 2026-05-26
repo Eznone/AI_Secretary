@@ -6,6 +6,7 @@ import anthropic
 from rich.live import Live
 from rich.markdown import Markdown
 from rich.spinner import Spinner
+from rich.table import Table
 
 from secretary.agent.registry import dispatch, get_tool_schemas
 from secretary.config import settings
@@ -26,7 +27,12 @@ _client: anthropic.Anthropic | None = None
 def _get_client() -> anthropic.Anthropic:
     global _client
     if _client is None:
-        _client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+        key = settings.anthropic_api_key
+        if not key:
+            raise RuntimeError(
+                "No Anthropic API key configured. Run /authenticate to set one up."
+            )
+        _client = anthropic.Anthropic(api_key=key)
     return _client
 
 
@@ -34,7 +40,16 @@ def run_session() -> None:
     session_id = create_session()
     conversation: list[dict] = []
 
-    console.print("[bold cyan]Secretary ready.[/bold cyan] Type your request, or [dim]Ctrl+C[/dim] to exit.\n")
+    if not settings.is_configured:
+        console.print(
+            "[yellow]No API key configured.[/yellow] "
+            "Run [bold cyan]/authenticate[/bold cyan] to get started.\n"
+        )
+    else:
+        console.print(
+            "[bold cyan]Secretary ready.[/bold cyan] "
+            "Type your request, or [dim]Ctrl+C[/dim] to exit.\n"
+        )
 
     while True:
         try:
@@ -49,6 +64,17 @@ def run_session() -> None:
             console.print("[dim]Session ended.[/dim]")
             break
 
+        if user_input.startswith("/"):
+            _handle_slash_command(user_input)
+            continue
+
+        if not settings.is_configured:
+            console.print(
+                "[yellow]No API key configured.[/yellow] "
+                "Run [bold cyan]/authenticate[/bold cyan] first.\n"
+            )
+            continue
+
         conversation.append({"role": "user", "content": user_input})
         save_message(session_id, "user", user_input)
 
@@ -58,6 +84,36 @@ def run_session() -> None:
             console.print(f"[red]API error:[/red] {exc}")
         except Exception as exc:
             console.print(f"[red]Unexpected error:[/red] {exc}")
+
+
+def _handle_slash_command(raw: str) -> None:
+    cmd = raw.split()[0].lower()
+
+    if cmd == "/authenticate":
+        from secretary.ui.authenticate import run_authenticate
+
+        run_authenticate()
+        global _client
+        _client = None  # force client rebuild with the new key
+    elif cmd == "/help":
+        _print_help()
+    else:
+        console.print(
+            f"[yellow]Unknown command:[/yellow] {cmd}  "
+            "— type [bold cyan]/help[/bold cyan] for available commands.\n"
+        )
+
+
+def _print_help() -> None:
+    table = Table(border_style="dim", show_header=False, padding=(0, 2))
+    table.add_column(style="bold cyan", no_wrap=True)
+    table.add_column(style="white")
+    table.add_row("/authenticate", "Set up or change your AI provider API key")
+    table.add_row("/help", "Show this message")
+    table.add_row("exit / quit", "End the session")
+    console.print()
+    console.print(table)
+    console.print()
 
 
 def _agent_turn(conversation: list[dict], session_id: int) -> None:
@@ -97,12 +153,10 @@ def _agent_turn(conversation: list[dict], session_id: int) -> None:
                         }
                     )
 
-            # Feed assistant response + tool results back into the conversation
             conversation.append({"role": "assistant", "content": response.content})
             conversation.append({"role": "user", "content": tool_results})
 
         else:
-            # stop_reason == "end_turn" — final text response
             final_text = next(
                 (b.text for b in response.content if hasattr(b, "text")),
                 "",
