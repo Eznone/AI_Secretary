@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 
 from secretary.agent.registry import tool
 from secretary.auth.google import get_calendar_service
+from secretary.platform_dirs import get_local_timezone
 
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _TIME_RE = re.compile(r"^\d{2}:\d{2}$")
@@ -43,6 +44,7 @@ def list_calendar_events(date: str, max_results: int = 15) -> str:
     """
     if err := _validate_date(date):
         return err
+    local_tz = get_local_timezone()
     service = get_calendar_service()
     day_start = datetime.fromisoformat(date).replace(
         hour=0, minute=0, second=0, tzinfo=timezone.utc
@@ -99,12 +101,13 @@ def create_calendar_event(
     ):
         if err:
             return err
+    local_tz = get_local_timezone()
     service = get_calendar_service()
     event = {
         "summary": title,
         "description": description,
-        "start": {"dateTime": f"{date}T{start_time}:00", "timeZone": "UTC"},
-        "end":   {"dateTime": f"{date}T{end_time}:00",   "timeZone": "UTC"},
+        "start": {"dateTime": f"{date}T{start_time}:00", "timeZone": local_tz},
+        "end":   {"dateTime": f"{date}T{end_time}:00",   "timeZone": local_tz},
     }
     result = service.events().insert(calendarId="primary", body=event).execute()
     link = result.get("htmlLink", "")

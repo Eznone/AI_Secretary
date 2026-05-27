@@ -10,6 +10,7 @@ Data directory per OS:
   Linux   : ~/.local/share/secretary   (XDG Base Directory spec)
 """
 
+import os
 import stat
 import sys
 from pathlib import Path
@@ -32,6 +33,41 @@ def ensure_data_dir() -> Path:
     """Create the app data directory if it does not exist, then return it."""
     APP_DATA_DIR.mkdir(parents=True, exist_ok=True)
     return APP_DATA_DIR
+
+
+def get_local_timezone() -> str:
+    """Return the IANA timezone name for the current system (e.g. 'Europe/Madrid').
+
+    Tries three sources in order, falling back to UTC if none succeed.
+    Works on Linux, macOS, and WSL2 (which inherits the Windows timezone).
+    """
+    # 1. TZ environment variable (highest priority — explicit override)
+    tz = os.environ.get("TZ", "").strip()
+    if tz:
+        return tz
+
+    # 2. /etc/timezone — Debian/Ubuntu/WSL2
+    try:
+        tz = Path("/etc/timezone").read_text().strip()
+        if tz:
+            return tz
+    except OSError:
+        pass
+
+    # 3. /etc/localtime symlink target — RHEL/macOS/Alpine
+    #    Resolves to something like /usr/share/zoneinfo/Europe/Madrid
+    try:
+        target = Path("/etc/localtime").resolve()
+        parts = target.parts
+        if "zoneinfo" in parts:
+            idx = parts.index("zoneinfo")
+            tz = "/".join(parts[idx + 1:])
+            if tz:
+                return tz
+    except OSError:
+        pass
+
+    return "UTC"
 
 
 def secure_file(path: Path) -> None:

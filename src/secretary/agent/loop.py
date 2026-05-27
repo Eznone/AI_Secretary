@@ -13,6 +13,7 @@ from rich.markdown import Markdown
 from rich.spinner import Spinner
 
 from secretary.agent.commands import SLASH_COMMANDS, handle as handle_command
+from secretary.platform_dirs import get_local_timezone
 from secretary.agent.providers import get_provider
 from secretary.agent.providers.base import (
     make_assistant_turn,
@@ -27,12 +28,13 @@ from secretary.ui.console import console, get_user_input, print_tool_call
 SYSTEM_PROMPT = """\
 You are an AI Secretary running locally in the user's terminal. \
 You have access to tools for Google Calendar and Gmail. \
-Today's date is {today}. \
+Today's date is {today}. The user's local timezone is {timezone}. \
 Be concise, direct, and proactive. \
 CRITICAL: You must ALWAYS call the appropriate tool before answering any question \
 about the user's emails or calendar events. \
 Never fabricate, guess, or infer email or calendar content — \
 if a question requires real data, call the tool first, then answer from the result. \
+Always present times in the user's local timezone. \
 Always ask for confirmation before creating, modifying, or deleting data.\
 """
 
@@ -100,7 +102,7 @@ def _agent_turn(conversation: list[dict], session_id: int) -> None:
     returns TurnResult(done=True), meaning it produced a final text answer.
     """
     provider = get_provider()
-    system = SYSTEM_PROMPT.format(today=date.today().isoformat())
+    system = SYSTEM_PROMPT.format(today=date.today().isoformat(), timezone=get_local_timezone())
     tools = get_tool_schemas()
 
     while True:

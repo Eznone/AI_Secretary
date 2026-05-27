@@ -172,6 +172,19 @@ class GroqAdapter:
 
 _TEXT_TOOL_RE = re.compile(r"<function=(\w+)\s*")
 
+# Llama models sometimes guess tool names that differ from registered names.
+# Map known variations to the correct registry key.
+_TOOL_ALIASES: dict[str, str] = {
+    "get_emails":             "list_emails",
+    "fetch_emails":           "list_emails",
+    "get_email":              "read_email",
+    "fetch_email":            "read_email",
+    "get_calendar_event":     "list_calendar_events",
+    "get_calendar_events":    "list_calendar_events",
+    "fetch_calendar_events":  "list_calendar_events",
+    "fetch_calendar_event":   "list_calendar_events",
+}
+
 
 def _parse_text_tool_calls(text: str) -> list[ToolCall] | None:
     """Parse raw <function=name {...}> syntax that some Llama models emit as text.
@@ -186,7 +199,7 @@ def _parse_text_tool_calls(text: str) -> list[ToolCall] | None:
     calls: list[ToolCall] = []
 
     for match in _TEXT_TOOL_RE.finditer(text):
-        name = match.group(1)
+        name = _TOOL_ALIASES.get(match.group(1), match.group(1))
         rest = text[match.end():]
         try:
             inputs, _ = decoder.raw_decode(rest)
