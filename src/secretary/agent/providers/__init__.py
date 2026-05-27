@@ -5,7 +5,7 @@ Call get_provider() to get the adapter for whichever LLM the user has selected.
 Adapters are imported lazily so unused provider SDKs are never loaded.
 
 Why construct a new adapter each call instead of caching?
-  The user can run /authenticate mid-session to switch providers. Calling
+  The user can run /auth-llm mid-session to switch providers. Calling
   get_provider() fresh at the start of each _agent_turn() means the change
   takes effect on the very next message without restarting the session.
 """
@@ -39,5 +39,5 @@ def get_provider() -> ProviderAdapter:
     raise ValueError(
         f"Unknown provider {provider!r}. "
         "Expected one of: 'claude', 'gemini', 'groq'. "
-        "Run /authenticate to reconfigure."
+        "Run /auth-llm to reconfigure."
     )

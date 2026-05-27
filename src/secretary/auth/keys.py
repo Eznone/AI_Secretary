@@ -6,12 +6,13 @@ The fallback path is platform-correct via platform_dirs.APP_DATA_DIR.
 """
 
 import json
+import os
 from pathlib import Path
 
 import keyring
 import keyring.errors
 
-from secretary.platform_dirs import APP_DATA_DIR, secure_file
+from secretary.platform_dirs import APP_DATA_DIR
 
 _SERVICE = "secretary_api_keys"
 _ACTIVE_PROVIDER_KEY = "__active_provider__"
@@ -41,8 +42,13 @@ def _read_fallback() -> dict:
 
 def _write_fallback(data: dict) -> None:
     _FALLBACK_PATH.parent.mkdir(parents=True, exist_ok=True)
-    _FALLBACK_PATH.write_text(json.dumps(data))
-    secure_file(_FALLBACK_PATH)  # owner-only on Unix; no-op on Windows
+    # O_CREAT|O_WRONLY|O_TRUNC with mode 0o600 creates the file owner-only in
+    # a single syscall, eliminating the write-then-chmod TOCTOU window.
+    # On Windows the mode bits are ignored by NTFS, but the call succeeds safely.
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+    fd = os.open(str(_FALLBACK_PATH), flags, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write(json.dumps(data))
 
 
 # ---------------------------------------------------------------------------

@@ -44,7 +44,7 @@ class GeminiAdapter:
         key = settings.gemini_api_key
         if not key:
             raise RuntimeError(
-                "No Gemini API key configured. Run /authenticate to set one up."
+                "No Gemini API key configured. Run /auth-llm to set one up."
             )
         # The new SDK uses a Client instance rather than module-level configure().
         self._client = genai.Client(api_key=key)

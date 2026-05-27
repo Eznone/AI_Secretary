@@ -1,11 +1,13 @@
 """Gmail tools registered with the AI tool registry."""
 
 import base64
-import email as email_lib
 from email.mime.text import MIMEText
 
 from secretary.agent.registry import tool
 from secretary.auth.google import get_gmail_service
+
+_MAX_RESULTS_CAP = 50   # hard upper bound to prevent runaway API calls
+_BODY_SIZE_CAP   = 8_000  # characters; prevents huge emails from flooding context
 
 
 @tool
@@ -16,6 +18,7 @@ def list_emails(max_results: int = 10, query: str = "") -> str:
         max_results: Maximum number of emails to return. Default is 10.
         query: Gmail search query, e.g. 'is:unread', 'from:boss@company.com', 'subject:meeting'.
     """
+    max_results = min(max_results, _MAX_RESULTS_CAP)
     service = get_gmail_service()
     list_result = (
         service.users()
@@ -63,6 +66,8 @@ def read_email(email_id: str) -> str:
     date    = headers.get("Date", "")
 
     body = _extract_body(msg["payload"])
+    if len(body) > _BODY_SIZE_CAP:
+        body = body[:_BODY_SIZE_CAP] + f"\n\n[truncated — {len(body)} chars total]"
 
     return f"From: {sender}\nDate: {date}\nSubject: {subject}\n\n{body}"
 

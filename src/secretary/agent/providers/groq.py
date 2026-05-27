@@ -43,7 +43,7 @@ class GroqAdapter:
         key = settings.groq_api_key
         if not key:
             raise RuntimeError(
-                "No Groq API key configured. Run /authenticate to set one up."
+                "No Groq API key configured. Run /auth-llm to set one up."
             )
         self._client = Groq(api_key=key)
         self._model = settings.groq_model

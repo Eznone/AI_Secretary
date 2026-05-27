@@ -36,24 +36,8 @@ def main(ctx: typer.Context) -> None:
 @app.command()
 def auth() -> None:
     """Set up Google OAuth credentials and authorize Calendar + Gmail access."""
-    from secretary.auth.google import load_google_client_config, run_oauth_flow
-    from secretary.config import settings
-    from secretary.ui.authenticate import run_google_setup
-
-    # Collect client_id + client_secret if neither keyring credentials
-    # nor the legacy JSON file are present.
-    if not load_google_client_config() and not settings.google_client_secret_path.exists():
-        if not run_google_setup():
-            return  # User cancelled — exit silently
-
-    console.print("[cyan]Opening browser for Google authorization…[/cyan]")
-    try:
-        run_oauth_flow()
-    except Exception as exc:
-        console.print(f"[red]Authorization failed:[/red] {exc}")
-        return
-
-    console.print("[bold green]✓ Google authentication complete.[/bold green]")
+    from secretary.ui.authenticate import run_google_auth
+    run_google_auth()
 
 
 @app.command()

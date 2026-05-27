@@ -6,6 +6,7 @@ JSON file inside the platform data directory (mode 600, owner-only).
 """
 
 import json
+import os
 
 import keyring
 import keyring.errors
@@ -15,7 +16,7 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
 from secretary.config import settings
-from secretary.platform_dirs import APP_DATA_DIR, secure_file
+from secretary.platform_dirs import APP_DATA_DIR
 
 SCOPES = [
     "https://www.googleapis.com/auth/calendar",
@@ -57,8 +58,10 @@ def _read_token_fallback() -> str | None:
 
 def _write_token_fallback(raw: str) -> None:
     _FALLBACK_PATH.parent.mkdir(parents=True, exist_ok=True)
-    _FALLBACK_PATH.write_text(raw)
-    secure_file(_FALLBACK_PATH)  # owner-only on Unix; no-op on Windows
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+    fd = os.open(str(_FALLBACK_PATH), flags, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write(raw)
 
 
 # ---------------------------------------------------------------------------
@@ -143,7 +146,7 @@ def run_oauth_flow() -> Credentials:
     else:
         raise RuntimeError(
             "Google OAuth credentials not configured.\n"
-            "Run 'sec auth' to enter your client ID and secret."
+            "Run /auth-google to enter your client ID and secret."
         )
     # port=0 → OS picks a random ephemeral port (no predictable attack surface)
     creds = flow.run_local_server(port=0)

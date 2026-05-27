@@ -3,6 +3,7 @@ Core agentic execution loop — provider-agnostic.
 
 All provider-specific logic lives in agent/providers/. This module only knows
 about the neutral Conversation format defined in agent/providers/base.py.
+Slash command handling lives in agent/commands.py.
 """
 
 from datetime import date
@@ -10,8 +11,8 @@ from datetime import date
 from rich.live import Live
 from rich.markdown import Markdown
 from rich.spinner import Spinner
-from rich.table import Table
 
+from secretary.agent.commands import SLASH_COMMANDS, handle as handle_command
 from secretary.agent.providers import get_provider
 from secretary.agent.providers.base import (
     make_assistant_turn,
@@ -19,9 +20,9 @@ from secretary.agent.providers.base import (
     make_user_turn,
 )
 from secretary.agent.registry import dispatch, get_tool_schemas
-from secretary.config import settings  # also provides settings.debug
+from secretary.config import settings
 from secretary.storage.db import create_session, save_message
-from secretary.ui.console import console, print_tool_call
+from secretary.ui.console import console, get_user_input, print_tool_call
 
 SYSTEM_PROMPT = """\
 You are an AI Secretary running locally in the user's terminal. \
@@ -40,7 +41,7 @@ def run_session() -> None:
     if not settings.is_configured:
         console.print(
             "[yellow]No API key configured.[/yellow] "
-            "Run [bold cyan]/authenticate[/bold cyan] to get started.\n"
+            "Run [bold cyan]/auth-llm[/bold cyan] to get started.\n"
         )
     else:
         console.print(
@@ -50,7 +51,7 @@ def run_session() -> None:
 
     while True:
         try:
-            user_input = console.input("[bold green]You:[/bold green] ").strip()
+            user_input = get_user_input(SLASH_COMMANDS)
         except (KeyboardInterrupt, EOFError):
             console.print("\n[dim]Session ended.[/dim]")
             break
@@ -62,13 +63,13 @@ def run_session() -> None:
             break
 
         if user_input.startswith("/"):
-            _handle_slash_command(user_input)
+            handle_command(user_input)
             continue
 
         if not settings.is_configured:
             console.print(
                 "[yellow]No API key configured.[/yellow] "
-                "Run [bold cyan]/authenticate[/bold cyan] first.\n"
+                "Run [bold cyan]/auth-llm[/bold cyan] first.\n"
             )
             continue
 
@@ -87,41 +88,10 @@ def run_session() -> None:
                 console.print(f"[red]Error:[/red] {exc}")
 
 
-def _handle_slash_command(raw: str) -> None:
-    cmd = raw.split()[0].lower()
-
-    if cmd == "/authenticate":
-        from secretary.ui.authenticate import run_authenticate
-        run_authenticate()
-        # get_provider() is called fresh each _agent_turn(), so no cache to
-        # invalidate here — the new key is picked up automatically next turn.
-
-    elif cmd == "/help":
-        _print_help()
-
-    else:
-        console.print(
-            f"[yellow]Unknown command:[/yellow] {cmd}  "
-            "— type [bold cyan]/help[/bold cyan] for available commands.\n"
-        )
-
-
-def _print_help() -> None:
-    table = Table(border_style="dim", show_header=False, padding=(0, 2))
-    table.add_column(style="bold cyan", no_wrap=True)
-    table.add_column(style="white")
-    table.add_row("/authenticate", "Set up or change your AI provider API key")
-    table.add_row("/help",         "Show this message")
-    table.add_row("exit / quit",   "End the session")
-    console.print()
-    console.print(table)
-    console.print()
-
-
 def _agent_turn(conversation: list[dict], session_id: int) -> None:
     """Run the multi-turn tool-use loop for one user request.
 
-    Calls get_provider() fresh each time so that a /authenticate run mid-session
+    Calls get_provider() fresh each time so that a /auth-llm run mid-session
     is picked up on the very next message. The loop continues until the provider
     returns TurnResult(done=True), meaning it produced a final text answer.
     """

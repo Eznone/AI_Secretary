@@ -35,7 +35,6 @@ class Settings(BaseSettings):
     google_token_keyring_service: str = "secretary_google_oauth"
 
     db_path: Path = APP_DATA_DIR / "history.db"
-    data_dir: Path = APP_DATA_DIR
 
     @model_validator(mode="after")
     def _load_from_keyring(self) -> "Settings":

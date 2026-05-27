@@ -32,7 +32,7 @@ class ClaudeAdapter:
         key = settings.anthropic_api_key
         if not key:
             raise RuntimeError(
-                "No Anthropic API key configured. Run /authenticate to set one up."
+                "No Anthropic API key configured. Run /auth-llm to set one up."
             )
         self._client = anthropic.Anthropic(api_key=key)
         self._model = settings.anthropic_model

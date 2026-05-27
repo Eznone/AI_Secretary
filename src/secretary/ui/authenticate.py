@@ -1,4 +1,4 @@
-"""Interactive /authenticate flow for selecting and storing an AI provider API key."""
+"""Interactive auth flows: /auth-llm for AI provider keys, /auth-google for Google OAuth."""
 
 import questionary
 from rich.panel import Panel
@@ -94,6 +94,25 @@ def run_authenticate() -> None:
     console.print(f"  [bold green]✓[/bold green] Key saved for [bold cyan]{PROVIDERS[provider]}[/bold cyan].")
     console.print(f"  Active provider set to [bold cyan]{PROVIDERS[provider]}[/bold cyan].")
     console.print()
+
+
+def run_google_auth() -> None:
+    """Full Google auth flow: collect client credentials (if missing) then run OAuth."""
+    from secretary.auth.google import load_google_client_config, run_oauth_flow
+    from secretary.config import settings
+
+    if not load_google_client_config() and not settings.google_client_secret_path.exists():
+        if not run_google_setup():
+            return
+
+    console.print("[cyan]Opening browser for Google authorization…[/cyan]")
+    try:
+        run_oauth_flow()
+    except Exception as exc:
+        console.print(f"[red]Authorization failed:[/red] {exc}\n")
+        return
+
+    console.print("[bold green]✓ Google authentication complete.[/bold green]\n")
 
 
 def run_google_setup() -> bool:
