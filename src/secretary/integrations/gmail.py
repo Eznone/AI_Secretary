@@ -3,11 +3,23 @@
 import base64
 from email.mime.text import MIMEText
 
+import questionary
+from rich.panel import Panel
+
 from secretary.agent.registry import tool
 from secretary.auth.google import get_gmail_service
+from secretary.ui.console import console
 
 _MAX_RESULTS_CAP = 50   # hard upper bound to prevent runaway API calls
 _BODY_SIZE_CAP   = 8_000  # characters; prevents huge emails from flooding context
+
+_CONFIRM_STYLE = questionary.Style([
+    ("selected",    "fg:cyan bold"),
+    ("pointer",     "fg:cyan bold"),
+    ("highlighted", "fg:cyan"),
+    ("question",    "bold"),
+    ("answer",      "fg:cyan bold"),
+])
 
 
 @tool
@@ -87,6 +99,30 @@ def send_email(to: str, subject: str, body: str) -> str:
 
     if "@" not in to:
         return f"Invalid recipient address: {to!r}. Expected a valid email address."
+
+    preview = body if len(body) <= 300 else body[:300] + "…"
+    console.print(
+        Panel(
+            f"[bold]To:[/bold]      {to}\n"
+            f"[bold]Subject:[/bold] {subject}\n\n"
+            f"{preview}",
+            title="[bold cyan]Email Preview[/bold cyan]",
+            border_style="cyan",
+            padding=(0, 2),
+        )
+    )
+
+    try:
+        confirmed = questionary.confirm(
+            "Send this email?",
+            default=False,
+            style=_CONFIRM_STYLE,
+        ).ask()
+    except KeyboardInterrupt:
+        confirmed = None
+
+    if not confirmed:
+        return "Email not sent — cancelled by user."
 
     service = get_gmail_service()
     mime_msg = MIMEText(body)

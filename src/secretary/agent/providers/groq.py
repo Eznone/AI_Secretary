@@ -29,6 +29,8 @@ straightforward. The main differences from Anthropic:
 from __future__ import annotations
 
 import json
+import re
+import uuid
 
 from groq import BadRequestError, Groq
 
@@ -90,7 +92,15 @@ class GroqAdapter:
                 )
             return TurnResult(done=False, tool_calls=tool_calls)
 
-        return TurnResult(done=True, text=choice.message.content or "")
+        text = choice.message.content or ""
+        # Some Llama variants emit tool calls as raw text instead of using the
+        # structured API. Parse and re-dispatch them rather than showing the user
+        # raw <function=...> syntax.
+        fallback_calls = _parse_text_tool_calls(text)
+        if fallback_calls:
+            return TurnResult(done=False, tool_calls=fallback_calls)
+
+        return TurnResult(done=True, text=text)
 
     # ------------------------------------------------------------------
     # Translation helpers
@@ -158,6 +168,39 @@ class GroqAdapter:
                     )
 
         return messages
+
+
+_TEXT_TOOL_RE = re.compile(r"<function=(\w+)\s*")
+
+
+def _parse_text_tool_calls(text: str) -> list[ToolCall] | None:
+    """Parse raw <function=name {...}> syntax that some Llama models emit as text.
+
+    Uses json.JSONDecoder.raw_decode so nested braces and quotes inside the
+    argument object are handled correctly without a fragile regex.
+    """
+    if "<function=" not in text:
+        return None
+
+    decoder = json.JSONDecoder()
+    calls: list[ToolCall] = []
+
+    for match in _TEXT_TOOL_RE.finditer(text):
+        name = match.group(1)
+        rest = text[match.end():]
+        try:
+            inputs, _ = decoder.raw_decode(rest)
+            if not isinstance(inputs, dict):
+                inputs = {}
+        except json.JSONDecodeError:
+            inputs = {}
+        calls.append(ToolCall(
+            id=f"txt_{uuid.uuid4().hex[:8]}",
+            name=name,
+            inputs=inputs,
+        ))
+
+    return calls or None
 
 
 def _is_tool_generation_error(exc: BadRequestError) -> bool:

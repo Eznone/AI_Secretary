@@ -7,6 +7,7 @@ JSON file inside the platform data directory (mode 600, owner-only).
 
 import json
 import os
+from pathlib import Path
 
 import keyring
 import keyring.errors
@@ -148,10 +149,20 @@ def run_oauth_flow() -> Credentials:
             "Google OAuth credentials not configured.\n"
             "Run /auth-google to enter your client ID and secret."
         )
-    # port=0 → OS picks a random ephemeral port (no predictable attack surface)
-    creds = flow.run_local_server(port=0)
+    # port=0 → OS picks a random ephemeral port (no predictable attack surface).
+    # open_browser=False on WSL2: there's no display server, so webbrowser falls
+    # back to `gio open` which prints a noisy "Operation not supported" error.
+    # The URL is already printed by run_local_server, so skipping the open is fine.
+    creds = flow.run_local_server(port=0, open_browser=not _is_wsl())
     _save_token(creds)
     return creds
+
+
+def _is_wsl() -> bool:
+    try:
+        return "microsoft" in Path("/proc/version").read_text().lower()
+    except OSError:
+        return False
 
 
 def _authenticated_service(api: str, version: str):
